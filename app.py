@@ -105,8 +105,7 @@ Vb = st.sidebar.slider("Phase B Voltage (Vb)", -1.0, 1.0, 1.0)
 Vc = st.sidebar.slider("Phase C Voltage (Vc)", -1.0, 1.0, 1.0)
 
 # --- Main Page Content ---
-st.title("⚡ Electrical Fault Prediction Dashboard")
-st.markdown("### Powered by Machine Learning")
+st.title("Electrical Fault Prediction Dashboard")
 
 # Main content columns
 col1, col2 = st.columns([2, 1])
@@ -176,13 +175,13 @@ with col2:
 
         if prediction_class != 0:
             st.markdown('<div class="prediction-container fault">', unsafe_allow_html=True)
-            st.error(f"🚨 FAULT DETECTED! 🚨", icon="⚠️")
+            st.error(f"🚨 FAULT DETECTED!", icon="⚠️")
             st.markdown(f"<p class='big-font'>**Fault Type:** {fault_name}</p>", unsafe_allow_html=True)
             st.warning("Immediate action is required to diagnose and resolve the issue.")
             st.markdown('</div>', unsafe_allow_html=True)
         else:
             st.markdown('<div class="prediction-container no-fault">', unsafe_allow_html=True)
-            st.success("✅ NO FAULT DETECTED ✅", icon="✅")
+            st.success("NO FAULT DETECTED ", icon="✅")
             st.markdown(f"<p class='big-font'>The system is operating normally.</p>", unsafe_allow_html=True)
             st.info("The electrical system appears to be stable and healthy.")
             st.markdown('</div>', unsafe_allow_html=True)
@@ -190,3 +189,4 @@ with col2:
 # --- Final description ---
 st.markdown("---")
 st.markdown("This dashboard was built using a machine learning model trained on a dataset of electrical parameters to predict the presence and type of electrical faults.")
+
