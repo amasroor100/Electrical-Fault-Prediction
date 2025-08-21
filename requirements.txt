@@ -8,5 +8,4 @@ xgboost
 pandas
 numpy
 plotly
-decisiontree
-randomforest
+joblib
