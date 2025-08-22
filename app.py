@@ -4,7 +4,7 @@ import numpy as np
 import plotly.express as px
 import pandas as pd
 
-# --- Page Configuration ---
+# --- Page Configuration (MUST be the first Streamlit command) ---
 st.set_page_config(page_title="Electrical Fault Prediction", layout="wide", initial_sidebar_state="expanded")
 
 # --- Custom CSS for a modern, clean look ---
@@ -59,13 +59,13 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-
 # --- Load all models and the label encoder ---
 @st.cache_resource
 def load_models():
     """Loads all models and the LabelEncoder from their pickle files."""
     models = {}
     try:
+        # Note: These files must exist in the same directory as this script.
         with open('random_forest_model.pkl', 'rb') as f:
             models['Random Forest'] = pickle.load(f)
         with open('xgboost_model.pkl', 'rb') as f:
@@ -79,8 +79,8 @@ def load_models():
         st.stop()
     return models, le
 
+# Load the models and label encoder
 models, le = load_models()
-
 
 # --- Sidebar for user inputs ---
 st.sidebar.title("⚡ Control Panel")
@@ -95,14 +95,67 @@ st.sidebar.header("Input Electrical Parameters")
 st.sidebar.markdown("Adjust the sliders to simulate system conditions.")
 
 st.sidebar.subheader("Currents (Amperes)")
-Ia = st.sidebar.slider("Phase A Current (Ia)", -1000.0, 1000.0, 10.0)
-Ib = st.sidebar.slider("Phase B Current (Ib)", -1000.0, 1000.0, 10.0)
-Ic = st.sidebar.slider("Phase C Current (Ic)", -1000.0, 1000.0, 10.0)
+Ia_val = st.sidebar.slider("Phase A Current (Ia)", -1000.0, 1000.0, 10.0)
+Ib_val = st.sidebar.slider("Phase B Current (Ib)", -1000.0, 1000.0, 10.0)
+Ic_val = st.sidebar.slider("Phase C Current (Ic)", -1000.0, 1000.0, 10.0)
 
 st.sidebar.subheader("Voltages (pu)")
-Va = st.sidebar.slider("Phase A Voltage (Va)", -1.0, 1.0, 1.0)
-Vb = st.sidebar.slider("Phase B Voltage (Vb)", -1.0, 1.0, 1.0)
-Vc = st.sidebar.slider("Phase C Voltage (Vc)", -1.0, 1.0, 1.0)
+Va_val = st.sidebar.slider("Phase A Voltage (Va)", -1.0, 1.0, 1.0)
+Vb_val = st.sidebar.slider("Phase B Voltage (Vb)", -1.0, 1.0, 1.0)
+Vc_val = st.sidebar.slider("Phase C Voltage (Vc)", -1.0, 1.0, 1.0)
+
+# Function to generate sinusoidal data
+def generate_sinusoidal_data(amplitude_a, amplitude_b, amplitude_c, prediction_class, is_current=True):
+    """
+    Generates time-series data for sinusoidal waves with optional fault simulation.
+    
+    Args:
+        amplitude_a (float): The base amplitude for phase A.
+        amplitude_b (float): The base amplitude for phase B.
+        amplitude_c (float): The base amplitude for phase C.
+        prediction_class (int): The numerical class of the predicted fault.
+        is_current (bool): True if generating current data, False for voltage.
+
+    Returns:
+        pd.DataFrame: A DataFrame with 'Time', 'Phase', and 'Value' columns.
+    """
+    time = np.linspace(0, 0.05, 500)  # Simulate 3 cycles for a 60 Hz system
+    data = []
+    
+    # Define phase shifts for a balanced three-phase system (120 degrees apart)
+    phase_shift_a = 0
+    phase_shift_b = -2 * np.pi / 3  # -120 degrees
+    phase_shift_c = 2 * np.pi / 3   # +120 degrees
+
+    # Apply fault effects to the waves
+    fault_multiplier = 0.5  # Example: 50% voltage drop or 2x current spike
+    
+    # Adjust amplitudes based on fault type
+    # For a simplified visual representation of the fault
+    if prediction_class != 0:
+        if is_current:
+            # Current spikes in faulted phases
+            if prediction_class in [1, 4, 7, 10, 11, 12]: # A-phase faults
+                amplitude_a *= (1 + fault_multiplier)
+            if prediction_class in [2, 8, 9, 11, 12]: # C-phase faults
+                amplitude_c *= (1 + fault_multiplier)
+            if prediction_class in [3, 6, 9, 10, 11, 12, 13]: # B-phase faults
+                amplitude_b *= (1 + fault_multiplier)
+        else:
+            # Voltage dips in faulted phases
+            if prediction_class in [1, 4, 7, 10, 11, 12]: # A-phase faults
+                amplitude_a *= (1 - fault_multiplier)
+            if prediction_class in [2, 8, 9, 11, 12]: # C-phase faults
+                amplitude_c *= (1 - fault_multiplier)
+            if prediction_class in [3, 6, 9, 10, 11, 12, 13]: # B-phase faults
+                amplitude_b *= (1 - fault_multiplier)
+
+    # Generate data points
+    data.append(pd.DataFrame({'Time': time, 'Phase': 'A', 'Value': amplitude_a * np.sin(2 * np.pi * 60 * time + phase_shift_a)}))
+    data.append(pd.DataFrame({'Time': time, 'Phase': 'B', 'Value': amplitude_b * np.sin(2 * np.pi * 60 * time + phase_shift_b)}))
+    data.append(pd.DataFrame({'Time': time, 'Phase': 'C', 'Value': amplitude_c * np.sin(2 * np.pi * 60 * time + phase_shift_c)}))
+
+    return pd.concat(data)
 
 # --- Main Page Content ---
 st.title("Electrical Fault Prediction Dashboard")
@@ -110,38 +163,64 @@ st.title("Electrical Fault Prediction Dashboard")
 # Main content columns
 col1, col2 = st.columns([2, 1])
 
+# Initialize prediction_class to 0 (No Fault) for initial display
+prediction_class = 0
+
 with col1:
     st.subheader("Real-Time System Data Visualization")
     
-    # Create a DataFrame for plotting
-    data_points = {
-        'Phase': ['Ia', 'Ib', 'Ic', 'Va', 'Vb', 'Vc'],
-        'Value': [Ia, Ib, Ic, Va, Vb, Vc],
-        'Type': ['Current', 'Current', 'Current', 'Voltage', 'Voltage', 'Voltage']
-    }
-    df_plot = pd.DataFrame(data_points)
-    
-    # Plot current and voltage graphs
-    fig_current = px.bar(df_plot[df_plot['Type'] == 'Current'], x='Phase', y='Value', 
-                         title='Current Measurements', color='Phase',
-                         labels={'Value': 'Current (A)'},
-                         color_discrete_map={'Ia': '#E91E63', 'Ib': '#2196F3', 'Ic': '#FFC107'})
+    # Generate and plot sinusoidal waves based on current prediction
+    current_data = generate_sinusoidal_data(Ia_val, Ib_val, Ic_val, prediction_class, is_current=True)
+    voltage_data = generate_sinusoidal_data(Va_val, Vb_val, Vc_val, prediction_class, is_current=False)
+
+    fig_current = px.line(current_data, x='Time', y='Value', color='Phase',
+                          title='Current Measurements (Amperes)',
+                          labels={'Value': 'Current (A)'},
+                          color_discrete_map={'A': '#E91E63', 'B': '#2196F3', 'C': '#FFC107'})
     fig_current.update_layout(height=400, title_x=0.5)
 
-    fig_voltage = px.bar(df_plot[df_plot['Type'] == 'Voltage'], x='Phase', y='Value', 
-                         title='Voltage Measurements', color='Phase',
-                         labels={'Value': 'Voltage (pu)'},
-                         color_discrete_map={'Va': '#E91E63', 'Vb': '#2196F3', 'Vc': '#FFC107'})
+    fig_voltage = px.line(voltage_data, x='Time', y='Value', color='Phase',
+                          title='Voltage Measurements (pu)',
+                          labels={'Value': 'Voltage (pu)'},
+                          color_discrete_map={'A': '#E91E63', 'B': '#2196F3', 'C': '#FFC107'})
     fig_voltage.update_layout(height=400, title_x=0.5)
-    
+
     st.plotly_chart(fig_current, use_container_width=True)
     st.plotly_chart(fig_voltage, use_container_width=True)
+
+    # Calculate and display power metrics
+    st.subheader("Calculated Power Values")
+    st.markdown("---")
     
+    # Base voltage for per-unit conversion
+    base_voltage_V = 11000  # 11 kV base voltage in Volts
+
+    # Calculate Apparent Power (S = V_actual * I)
+    S_A = (Va_val * base_voltage_V) * Ia_val
+    S_B = (Vb_val * base_voltage_V) * Ib_val
+    S_C = (Vc_val * base_voltage_V) * Ic_val
+    
+    total_S = S_A + S_B + S_C
+
+    # Display the results in columns in kVA
+    power_col1, power_col2, power_col3 = st.columns(3)
+    
+    with power_col1:
+        st.metric(label="Apparent Power Phase A", value=f"{S_A / 1000:.2f} kVA")
+    with power_col2:
+        st.metric(label="Apparent Power Phase B", value=f"{S_B / 1000:.2f} kVA")
+    with power_col3:
+        st.metric(label="Apparent Power Phase C", value=f"{S_C / 1000:.2f} kVA")
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.metric(label="Total Apparent Power", value=f"{total_S / 1000:.2f} kVA")
+
+
 with col2:
     st.subheader(f"Predict with {selected_model_name}")
     st.markdown("---")
     if st.button("Predict Fault"):
-        input_features = np.array([[Ia, Ib, Ic, Va, Vb, Vc]])
+        input_features = np.array([[Ia_val, Ib_val, Ic_val, Va_val, Vb_val, Vc_val]])
 
         # Make prediction based on selected model
         prediction_class = selected_model.predict(input_features)[0]
@@ -175,13 +254,13 @@ with col2:
 
         if prediction_class != 0:
             st.markdown('<div class="prediction-container fault">', unsafe_allow_html=True)
-            st.error(f"🚨 FAULT DETECTED!", icon="⚠️")
+            st.error(f"🚨 FAULT DETECTED! 🚨", icon="⚠️")
             st.markdown(f"<p class='big-font'>**Fault Type:** {fault_name}</p>", unsafe_allow_html=True)
             st.warning("Immediate action is required to diagnose and resolve the issue.")
             st.markdown('</div>', unsafe_allow_html=True)
         else:
             st.markdown('<div class="prediction-container no-fault">', unsafe_allow_html=True)
-            st.success("NO FAULT DETECTED ", icon="✅")
+            st.success("NO FAULT DETECTED ✅", icon="✅")
             st.markdown(f"<p class='big-font'>The system is operating normally.</p>", unsafe_allow_html=True)
             st.info("The electrical system appears to be stable and healthy.")
             st.markdown('</div>', unsafe_allow_html=True)
@@ -189,4 +268,3 @@ with col2:
 # --- Final description ---
 st.markdown("---")
 st.markdown("This dashboard was built using a machine learning model trained on a dataset of electrical parameters to predict the presence and type of electrical faults.")
-
